@@ -8,7 +8,6 @@ import shutil
 import magic
 from pymediainfo import MediaInfo
 import tkinter as tk
-from tkinter import Tk
 import tkinter.filedialog
 import hashlib
 from pathlib import Path
@@ -35,6 +34,8 @@ def idmf_delete_duplicates(target_dir):
   
     # In order to detect the duplicate files, define an empty dictionary.
     unique_files = dict()
+
+    total_space_saved_in_bytes = 0
   
     for root, folders, files in list_of_files:
         for file in files:
@@ -49,17 +50,21 @@ def idmf_delete_duplicates(target_dir):
                 if os.path.getsize(file_path) == os.path.getsize(existing_file_path):
                     os.remove(file_path)
                     print(f"{file_path} has been deleted as a duplicate of {existing_file_path}")
+                    duplicate_stats = os.stat(existing_file_path)
+                    total_space_saved_in_bytes += duplicate_stats.st_size
+
                 else:
                     print(f"{file_path} has the same hash but different size, not deleting.")
+    print("Successfully removed duplicates, saving "+str(total_space_saved_in_bytes)+" bytes of data.")
 
-def idmf_save_from_source(html_file, target_dir, image_list, dates_list):
-    print("Saving media from "+str(html_file))
+def idmf_save_media(html_file_name, target_dir, image_list, dates_list):
+    print("Saving media from "+str(html_file_name))
     for i in range(len(image_list)):
             if os.path.exists("source/"+image_list[i]):
                 # For whatever reason, Instagram will randomly store media without a file extension,
                 # so, we must determine the file type before we pass it to other libraries.
                 file_type = magic.from_file("source/"+image_list[i], mime=True)
-                #print(str(i)+ " - " +str(file_type) +" - "+str(imagereferences[i]))
+                #print(str(i)+ " - " +str(file_type) +" - "+str(media_links[i]))
                 if file_type == "image/jpeg":
                     image = Image.open("source/"+image_list[i]).convert("RGB")
                     image.save(str(target_dir)+"photos/"+dates_list[i]+".jpg", "jpeg")
@@ -79,15 +84,17 @@ def idmf_save_from_source(html_file, target_dir, image_list, dates_list):
                         shutil.copy("source/"+image_list[i], str(target_dir)+"video/"+dates_list[i]+".mp4")
                     elif hasAudio:
                         # MP4 is just an audio clip.
-                        shutil.copy("source/"+imagereferences[i], str(target_dir)+"audio/"+dates_list[i]+".mp4")
+                        shutil.copy("source/"+image_list[i], str(target_dir)+"audio/"+dates_list[i]+".mp4")
             else:
-                print("A reference exists to a file ("+str(imagereferences[i])+") that doesn't exist. Did you extract all media properly?")
+                print("A reference exists to a file ("+str(image_list[i])+") that doesn't exist. Did you extract all media properly?")
 
-def idmf_correct_image_dates(image_dates):
-    date_counts = Counter(imagedates)
-    corrected_image_dates = []
+# In this function, we will transform the date from what it is on the html file into
+# a proper format we can use for the name.
+def idmf_correct_media_dates(media_dates_list):
+    date_counts = Counter(media_dates_list)
+    corrected_image_dates_list = []
 
-    for date in imagedates:
+    for date in media_dates_list:
         if date_counts[date] > 1:
             #Append 00X based on the occurrence
             occurrence = date_counts[date] - 1
@@ -96,38 +103,48 @@ def idmf_correct_image_dates(image_dates):
         else:
             new_date = date
 
-        corrected_image_dates.append(new_date)
-    return corrected_image_dates
+        corrected_image_dates_list.append(new_date)
+    return corrected_image_dates_list
 
-def idmf_find_files_in_target(target_dir):
+def idmf_parse_html_files(target_dir):
+    global media_dates, media_links
+
+
     # Recursively search for matching files
     matching_files = []
     file_pattern = "message_*.html"
     for root, dirnames, filenames in os.walk(target_dir):
         for filename in fnmatch.filter(filenames, file_pattern):
             matching_files.append(os.path.join(root, filename))
-    return matching_files
 
-def idmf_parse_html_files(target_dir):
-    matching_files = idmf_find_files_in_target(target_dir)
     for file_path in matching_files:
     # For every file that matches our set file pattern...
         with open(file_path, 'r', encoding='utf-8') as html_file:
             source_code = html_file.read()
-            #print("Parsing: "+file_path)
+            print("Parsing: "+file_path)
             #tk_update_status(file_path)
             htmlParser.feed(source_code)
 
             # Make sure that multiple instances of filenames are corrected so they will not cause issues with the filesystem
-            corrected_image_dates = idmf_correct_image_dates()
-            idmf_save_from_source(html_file, "output/", imagereferences, corrected_image_dates)
-        print("Finished parsing file with ("+str(len(imagereferences))+") unique files.")
+            corrected_image_dates = idmf_correct_media_dates(media_dates_list=media_dates)
+            idmf_save_media(file_path, "output/", media_links, corrected_image_dates)
+        print("Finished parsing file with ("+str(len(media_links))+") unique files.")
+
+
+# Global variables we use to keep track of collected data.
+media_links = []
+media_dates = []
+checkingfordate = False
+ignore_because_group_photo = False
+object_media_total = 0
+countdowntodate = 0
 
 # Define what we will do when searching thru HTML files
 class MyHTMLParser(HTMLParser):
+
     # When we observe a start tag (div)
     def handle_starttag(self, tag, attrs):
-        global checkingfordate, countdowntodate, imageinmessagecount, isgroupphoto
+        global checkingfordate, countdowntodate, object_media_total, ignore_because_group_photo
         #print("Encountered a start tag:", tag)
         for attr, value in attrs:
             #print("     attr:", attr)
@@ -136,40 +153,40 @@ class MyHTMLParser(HTMLParser):
                 if attr == "src" and value != "files/Instagram-Logo.png":
                     #print("Extracted image: "+value)
                     # Record image reference
-                    if isgroupphoto:
-                        isgroupphoto = False
+                    if ignore_because_group_photo:
+                        ignore_because_group_photo = False
                         print("Ignoring "+value+" because it is the icon for the chat.")
                     if value == "":
                         print("A reference exists to nothing! Good job Instagram.")
                     else:
-                        imagereferences.append(value)
+                        media_links.append(value)
                         countdowntodate = 0
-                        imageinmessagecount += 1
+                        object_media_total += 1
                         checkingfordate = True
             if tag == "div" and checkingfordate:
                 countdowntodate += 1
                 #print(countdowntodate)
 
     def handle_data(self, data):
-        global checkingfordate, countdowntodate, imageinmessagecount, isgroupphoto
+        global checkingfordate, countdowntodate, object_media_total, ignore_because_group_photo
         #print("Encountered some data  :", data)
         if countdowntodate == 1 and checkingfordate:
-            for i in range(imageinmessagecount):
+            for i in range(object_media_total):
                 # For every image we find in a message block, 
                 # convert  the extracted date to the format we want 
                 # (eg. Sep 30, 2022, 9:32PM TO 20220930_213200)
                 time_object = time.strptime(data, '%b %d, %Y, %I:%M %p')
                 formatted_time_object = time.strftime('%Y%m%d_%H%M%S', time_object)
-                imagedates.append(formatted_time_object)
+                media_dates.append(formatted_time_object)
                 #print("Added Timestamp: "+ formatted_time_object)
             
             # Because we found the date for the media, start looking for the next media.
             checkingfordate = False
             countdowntodate = 0
-            imageinmessagecount = 0
+            object_media_total = 0
         if data == "Group photo":
             # If we are about to encounter the preview image for the group chat, ignore it in the start tags.
-            isgroupphoto = True                
+            ignore_because_group_photo = True                
 htmlParser = MyHTMLParser()
 
 # Specify the directory we want to search in.
@@ -187,14 +204,6 @@ idmf_check_working_directory()
 
 # Parse all avaialbe html files
 idmf_parse_html_files(search_directory)
-
-# Initialize these lists here to collect data for each HTML file
-imagereferences = []
-imagedates = []
-checkingfordate = False
-isgroupphoto = False
-imageinmessagecount = 0
-countdowntodate = 0
 
 delete_duplicates = input("Would you like to delete any duplicate files? (Spammed memes from your group chats)\nThis works by hashing files to determine if they are unique.\nPlease input (Y/N)\n")
 if delete_duplicates.lower() == "y":
