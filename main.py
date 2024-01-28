@@ -7,26 +7,34 @@ from collections import Counter
 import shutil
 import magic
 from pymediainfo import MediaInfo
-import tkinter as tk
+#import tkinter as tk
 import tkinter.filedialog
 import hashlib
 from pathlib import Path
 
 print("Starting InstagramDownloadMetadataFixer by Brandon Bunce")
 
-def tk_update_status(string_input):
-    tk_status = tk.Label(master = tk_root, text = string_input)
-    tk_status.pack()
-    tk_root.update()
+#def tk_update_status(string_input):
+#    tk_status = tk.Label(master = tk_root, text = string_input)
+#    tk_status.pack()
+#    tk_root.update()
 
-def idmf_check_working_directory():
+def idmf_check_output_directory():
     # Make sure our working directory is set up.
-    if not os.path.exists("output/photos"):
-        os.makedirs("output/photos")
-    if not os.path.exists("output/video"):
-        os.makedirs("output/video")
-    if not os.path.exists("output/audio"):
-        os.makedirs("output/audio")
+    photos_directory = os.path.join(output_directory, "photos")
+    if not os.path.exists(photos_directory):
+        os.makedirs(photos_directory)
+        print("Created missing photo output folder at", photos_directory)
+
+    video_directory = os.path.join(output_directory, "video")
+    if not os.path.exists(video_directory):
+        os.makedirs(video_directory)
+        print("Created missing video output folder at", video_directory)
+
+    audio_directory = os.path.join(output_directory, "audio")
+    if not os.path.exists(audio_directory):
+        os.makedirs(audio_directory)
+        print("Created missing audio output folder at", audio_directory)
 
 def idmf_delete_duplicates(target_dir):
     # Listing out all the files
@@ -60,18 +68,18 @@ def idmf_delete_duplicates(target_dir):
 def idmf_save_media(html_file_name, target_dir, image_list, dates_list):
     print("Saving media from "+str(html_file_name))
     for i in range(len(image_list)):
-            if os.path.exists("source/"+image_list[i]):
+            if os.path.exists(os.path.join(search_directory, image_list[i])):
                 # For whatever reason, Instagram will randomly store media without a file extension,
                 # so, we must determine the file type before we pass it to other libraries.
-                file_type = magic.from_file("source/"+image_list[i], mime=True)
+                file_type = magic.from_file(os.path.join(search_directory, image_list[i]), mime=True)
                 #print(str(i)+ " - " +str(file_type) +" - "+str(media_links[i]))
                 if file_type == "image/jpeg":
-                    image = Image.open("source/"+image_list[i]).convert("RGB")
-                    image.save(str(target_dir)+"photos/"+dates_list[i]+".jpg", "jpeg")
+                    image = Image.open(os.path.join(search_directory, image_list[i])).convert("RGB")
+                    image.save(str(target_dir)+"/photos/"+dates_list[i]+".jpg", "jpeg")
                 if file_type == "video/mp4":
                     # Maybe we can do some transcoding here at some point, but highly unneeded
                     # since Instagram compresses well.
-                    mp4info = MediaInfo.parse("source/"+image_list[i])
+                    mp4info = MediaInfo.parse(os.path.join(search_directory, image_list[i]))
                     hasVideo = False
                     hasAudio = False
                     for track in mp4info.tracks:
@@ -81,12 +89,12 @@ def idmf_save_media(html_file_name, target_dir, image_list, dates_list):
                             hasAudio = True
                     if hasAudio and hasVideo:
                         # MP4 contains a video.
-                        shutil.copy("source/"+image_list[i], str(target_dir)+"video/"+dates_list[i]+".mp4")
+                        shutil.copy((os.path.join(search_directory, image_list[i])), str(target_dir)+"/video/"+dates_list[i]+".mp4")
                     elif hasAudio:
                         # MP4 is just an audio clip.
-                        shutil.copy("source/"+image_list[i], str(target_dir)+"audio/"+dates_list[i]+".mp4")
+                        shutil.copy((os.path.join(search_directory, image_list[i])), str(target_dir)+"/audio/"+dates_list[i]+".mp4")
             else:
-                print("A reference exists to a file ("+str(image_list[i])+") that doesn't exist. Did you extract all media properly?")
+                print("A reference exists to a file ("+str((os.path.join(search_directory, image_list[i])))+") that doesn't exist. Did you extract all media properly?")
 
 # In this function, we will transform the date from what it is on the html file into
 # a proper format we can use for the name.
@@ -127,8 +135,14 @@ def idmf_parse_html_files(target_dir):
 
             # Make sure that multiple instances of filenames are corrected so they will not cause issues with the filesystem
             corrected_image_dates = idmf_correct_media_dates(media_dates_list=media_dates)
-            idmf_save_media(file_path, "output/", media_links, corrected_image_dates)
+            idmf_save_media(file_path, output_directory, media_links, corrected_image_dates)
         print("Finished parsing file with ("+str(len(media_links))+") unique files.")
+        media_links.clear()
+        media_dates.clear()
+
+    if len(matching_files) == 0:
+        print("Did not find any message.html files! Are you sure you selected the correct folder?")
+        exit()
 
 
 # Global variables we use to keep track of collected data.
@@ -190,17 +204,20 @@ class MyHTMLParser(HTMLParser):
 htmlParser = MyHTMLParser()
 
 # Specify the directory we want to search in.
-tk_root = tk.Tk()
-tk_root.title("InstagramDownloadMetadataFixer by Brandon Bunce")
-tk_root.geometry("800x400")
-tk_status = tk.Label(master = tk_root, text = "")
-tk_status.pack()
+#tk_root = tk.Tk()
+#tk_root.title("InstagramDownloadMetadataFixer by Brandon Bunce")
+#tk_root.geometry("800x400")
+#tk_status = tk.Label(master = tk_root, text = "")
+#tk_status.pack()
+print("Please use GUI to select the directory containing the 'messages' folder.")
 search_directory = tkinter.filedialog.askdirectory(title="Select Instagram Root Directory (should contain comments/files/messages)")
+print("Please use GUI to select where you would like to output the renamed images to.")
+output_directory = tkinter.filedialog.askdirectory(title="Please select the folder you would like to export to.")
 #tk_root.mainloop()
 #tk_root.withdraw()
 
 # Make sure our working directory is set up.
-idmf_check_working_directory()
+idmf_check_output_directory()
 
 # Parse all avaialbe html files
 idmf_parse_html_files(search_directory)
@@ -208,4 +225,4 @@ idmf_parse_html_files(search_directory)
 delete_duplicates = input("Would you like to delete any duplicate files? (Spammed memes from your group chats)\nThis works by hashing files to determine if they are unique.\nPlease input (Y/N)\n")
 if delete_duplicates.lower() == "y":
     print("Deleting duplicates...")
-    idmf_delete_duplicates("output")
+    idmf_delete_duplicates(output_directory)
