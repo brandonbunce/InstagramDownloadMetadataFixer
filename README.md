@@ -1,5 +1,5 @@
 # InstagramDownloadMetadataFixer
-Attempts to correct the arbitrary filenames of photos/videos/audio downloaded from Instagram based on the time they were sent.
+Corrects the arbitrary filenames of photos/videos/audio downloaded from Instagram by using the HTML files provided, and renaming media based on the time it was sent.
 (e.g. 309652536_5484494714960075_8826135696565401376_n_682982662784664.mp4 ---> 20230503_104100.mp4)
 
 Are you a shameless data hoarder? Looking to organize all those wacky photos you've sent in your group chats and to your friends?
