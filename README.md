@@ -17,5 +17,6 @@ in HTML files will point to nothing!)
 4. Enjoy your date-stamped photos.
 
 ## Tips:
-- When requesting a data downloaad from Instagram, it seems to be very prone to mistakes when requesting ALL of your data at once, so I advise requesting only what you want, such as your messsages.
+- When requesting a data download from Instagram, it seems to be very prone to mistakes when requesting ALL of your data at once, so I advise requesting only what you want, such as your messsages.
+- It is generally better to run this application on an SSD, or else you will be waiting on I/O and it'll run slow :(
 
