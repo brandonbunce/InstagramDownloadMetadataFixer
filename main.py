@@ -1,15 +1,18 @@
 from PIL import Image
+import piexif
 from html.parser import HTMLParser
 import time
+from datetime import datetime
 import fnmatch
 import os
+import re
 from collections import Counter
 import shutil
 import magic
 from pymediainfo import MediaInfo
-#import tkinter as tk
 import tkinter.filedialog
 import hashlib
+import filedate
 from pathlib import Path
 
 print("Starting InstagramDownloadMetadataFixer by Brandon Bunce")
@@ -20,7 +23,7 @@ print("Starting InstagramDownloadMetadataFixer by Brandon Bunce")
 #    tk_root.update()
 
 def idmf_check_output_directory():
-    # Make sure our working directory is set up.
+    # Make sure our working directory is set up. If it's not, create the directory.
     photos_directory = os.path.join(output_directory, "photos")
     if not os.path.exists(photos_directory):
         os.makedirs(photos_directory)
@@ -43,6 +46,7 @@ def idmf_delete_duplicates(target_dir):
     # In order to detect the duplicate files, define an empty dictionary.
     unique_files = dict()
 
+    # We'll measure how much space we saved here.
     total_space_saved_in_bytes = 0
   
     for root, folders, files in list_of_files:
@@ -74,8 +78,27 @@ def idmf_save_media(html_file_name, target_dir, image_list, dates_list):
                 file_type = magic.from_file(os.path.join(search_directory, image_list[i]), mime=True)
                 #print(str(i)+ " - " +str(file_type) +" - "+str(media_links[i]))
                 if file_type == "image/jpeg":
-                    image = Image.open(os.path.join(search_directory, image_list[i])).convert("RGB")
-                    image.save(str(target_dir)+"/photos/"+dates_list[i]+".jpg", "jpeg")
+                    imagePath = os.path.join(search_directory, image_list[i])
+                    image = Image.open(imagePath).convert("RGB")
+                    imageEXIFDict = piexif.load(imagePath)
+                    print(str(imageEXIFDict))
+                    # EXIF data is modified compliant with https://www.cipa.jp/std/documents/e/DC-008-2012_E.pdf
+                    media_date = media_dates_datetime[i].strftime("%Y:%m:%d %H:%M:%S")
+                    imageEXIFDict['0th'][piexif.ImageIFD.DateTime] = media_date
+                    imageEXIFDict['Exif'][piexif.ExifIFD.DateTimeOriginal] = media_date
+                    imageEXIFDict['Exif'][piexif.ExifIFD.DateTimeDigitized] = media_date
+                    imageEXIFDict['Exif'][piexif.ExifIFD.CameraOwnerName] = "InstagramDownloadMetadataFixer"
+                    
+                    # Pseudo-code; here we will eventually add other data we can parse from HTML data, like
+                    # the sender of an image. We can insert this into the EXIF data so it is easier to understand the
+                    # origins of an image. 
+                    # imageEXIFDict['Exif'][piexif.ExifIFD.CameraOwnerName = sender_name
+                    # imageEXIFDict['Exif'][piexif.ExifIFD.CameraOwnerName = message.name.whatever
+
+                    exif_bytes = piexif.dump(imageEXIFDict)
+                    piexif.insert(exif_bytes, imagePath)
+                    image.save(str(target_dir)+"/photos/"+dates_list[i]+".jpg", "jpeg", exif=exif_bytes)
+
                 if file_type == "video/mp4":
                     # Maybe we can do some transcoding here at some point, but highly unneeded
                     # since Instagram compresses well.
@@ -115,8 +138,7 @@ def idmf_correct_media_dates(media_dates_list):
     return corrected_image_dates_list
 
 def idmf_parse_html_files(target_dir):
-    global media_dates, media_links
-
+    global media_dates, media_dates_datetime, media_links
 
     # Recursively search for matching files
     matching_files = []
@@ -136,9 +158,10 @@ def idmf_parse_html_files(target_dir):
             # Make sure that multiple instances of filenames are corrected so they will not cause issues with the filesystem
             corrected_image_dates = idmf_correct_media_dates(media_dates_list=media_dates)
             idmf_save_media(file_path, output_directory, media_links, corrected_image_dates)
-        print("Finished parsing file with ("+str(len(media_links))+") unique files.")
+        print("Finished parsing file with ("+str(len(media_links))+") unique objects.")
         media_links.clear()
         media_dates.clear()
+        media_dates_datetime.clear()
 
     if len(matching_files) == 0:
         print("Did not find any message.html files! Are you sure you selected the correct folder?")
@@ -148,8 +171,10 @@ def idmf_parse_html_files(target_dir):
 # Global variables we use to keep track of collected data.
 media_links = []
 media_dates = []
+media_dates_datetime = []
 checkingfordate = False
 ignore_because_group_photo = False
+#potential_data_name = ""
 object_media_total = 0
 countdowntodate = 0
 
@@ -171,7 +196,7 @@ class MyHTMLParser(HTMLParser):
                         ignore_because_group_photo = False
                         print("Ignoring "+value+" because it is the icon for the chat.")
                     if value == "":
-                        print("A reference exists to nothing! Good job Instagram.")
+                        print("A reference exists to nothing! Did you decompress the data correctly?")
                     else:
                         media_links.append(value)
                         countdowntodate = 0
@@ -182,17 +207,29 @@ class MyHTMLParser(HTMLParser):
                 #print(countdowntodate)
 
     def handle_data(self, data):
-        global checkingfordate, countdowntodate, object_media_total, ignore_because_group_photo
+        global checkingfordate, countdowntodate, object_media_total, ignore_because_group_photo#, potential_data_name
         #print("Encountered some data  :", data)
+        #potential_data_name = data
         if countdowntodate == 1 and checkingfordate:
             for i in range(object_media_total):
                 # For every image we find in a message block, 
                 # convert  the extracted date to the format we want 
                 # (eg. Sep 30, 2022, 9:32PM TO 20220930_213200)
-                time_object = time.strptime(data, '%b %d, %Y, %I:%M %p')
-                formatted_time_object = time.strftime('%Y%m%d_%H%M%S', time_object)
+                
+                # We know that the dates Instagram gives us will always match this format, so we can parse it and convert to a time struct.
+                time_object = datetime.strptime(data, '%b %d, %Y, %I:%M %p')
+                # Write the time struct to the array so we can handle it later.
+                media_dates_datetime.append(time_object)
+                formatted_time_object = datetime.strftime(time_object, '%Y%m%d_%H%M%S')
+                # We will also write this object as string.
                 media_dates.append(formatted_time_object)
+
+                #print("formatted_time_object:" + str(formatted_time_object))
+
+                #datetime(time.strptime(data, '%Y'), time.strptime(data, '%Y') )
                 #print("Added Timestamp: "+ formatted_time_object)
+        # Now 
+        #if countdown
             
             # Because we found the date for the media, start looking for the next media.
             checkingfordate = False
