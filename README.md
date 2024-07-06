@@ -14,3 +14,10 @@ Download the latest release, run the python script (make sure you've got everyth
 
 Tips:
 When downloading data from Instagram, it may sometimes be better to request partial data downloads, such as with chats only, as sometimes the downloads can be incomplete when requesting a full one.
+
+Goals:
+
+- Modify EXIF to correspond to date
+- Modify EXIF to include other variables we can parse (who sent the message, what groupchat, etc)
+- Implement a GUI
+- Distribute as an executable to avoid having to set up environment
