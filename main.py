@@ -117,6 +117,7 @@ def idmf_save_media(html_file_name, target_dir, image_list, dates_list):
                         # Here, we will call ffmpeg to handle metadata for us, as it is not standardized with all video, but
                         # to the individual container. In our case, Instagram will "always" be mp4, so we can handle it 
                         # without too much complication.
+                        metadata_formatted_date = str(media_dates_datetime[i].strftime("%Y-%m-%d %H:%M:%S"))
                         subprocess.call([
                             'ffmpeg',
                             '-i', os.path.abspath(os.path.join(search_directory, image_list[i])),
@@ -124,6 +125,13 @@ def idmf_save_media(html_file_name, target_dir, image_list, dates_list):
                             '-movflags', 'use_metadata_tags',
                             '-map_metadata', '0',
                             '-metadata', 'year='+str(media_dates_datetime[i].year),
+                            '-metadata', 'MediaCreateDate='+metadata_formatted_date,
+                            # Immich seems to only respond to this tag, but we will include these others
+                            # just in case.
+                            '-metadata', 'MediaModifyDate='+metadata_formatted_date,
+                            '-metadata', 'creation_time='+metadata_formatted_date,
+                            '-metadata', 'TrackCreateDate='+metadata_formatted_date,
+                            '-metadata', 'TrackModifyDate='+metadata_formatted_date,
                             os.path.abspath(str(target_dir)+"/video/"+dates_list[i]+".mp4")
                         ])
 
