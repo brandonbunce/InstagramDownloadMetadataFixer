@@ -2,6 +2,7 @@ from PIL import Image
 import piexif
 from html.parser import HTMLParser
 import time
+import subprocess
 from datetime import datetime
 import fnmatch
 import os
@@ -112,7 +113,24 @@ def idmf_save_media(html_file_name, target_dir, image_list, dates_list):
                             hasAudio = True
                     if hasAudio and hasVideo:
                         # MP4 contains a video.
-                        shutil.copy((os.path.join(search_directory, image_list[i])), str(target_dir)+"/video/"+dates_list[i]+".mp4")
+                        
+                        # Here, we will call ffmpeg to handle metadata for us, as it is not standardized with all video, but
+                        # to the individual container. In our case, Instagram will "always" be mp4, so we can handle it 
+                        # without too much complication.
+                        subprocess.call([
+                            'ffmpeg',
+                            '-i', os.path.abspath(os.path.join(search_directory, image_list[i])),
+                            '-c', 'copy',
+                            '-movflags', 'use_metadata_tags',
+                            '-map_metadata', '0',
+                            '-metadata', 'year='+str(media_dates_datetime[i].year),
+                            os.path.abspath(str(target_dir)+"/video/"+dates_list[i]+".mp4")
+                        ])
+
+                        # We can fall back to this if for any reason user does not have ffmpeg installed. Technically it is not needed,
+                        # but you wont be able to add metadata to video container
+                        #shutil.copy((os.path.join(search_directory, image_list[i])), str(target_dir)+"/video/"+dates_list[i]+".mp4")
+
                     elif hasAudio:
                         # MP4 is just an audio clip.
                         shutil.copy((os.path.join(search_directory, image_list[i])), str(target_dir)+"/audio/"+dates_list[i]+".mp4")
